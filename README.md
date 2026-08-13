@@ -1,83 +1,104 @@
 # Natural Language to SQL (NL2SQL)
 
-Convert natural language questions into SQL queries using AI-powered multi-agent system.
+Convert natural language questions into SQL queries using an AI-powered multi-agent system.
 
 ## Features
 
 - **Natural Language Processing**: Ask questions in plain English
 - **Multi-Database Support**: SQLite, PostgreSQL, MySQL
-- **AI-Powered**: Uses OpenAI/Anthropic models with CrewAI multi-agent framework
+- **AI-Powered**: Uses Groq models through LangChain + CrewAI
 - **Interactive Interface**: Streamlit web application
-- **Human Feedback**: Thumbs up/down system for human in the loop learning
+- **Human Feedback**: Thumbs up/down system for human-in-the-loop learning
 - **Ground Truth Testing**: Compare AI queries with your own SQL
-- **Zero shot accuracy**: Can achieve upto ~85% semantic sql accuracy without any human in the loop learning
 - **Sample Dataset**: Pre-loaded NBA database with sample questions for instant testing
-- **Performance Optimization**: Fast mode to skip schema analysis for 40-50% faster query processing
-- **Token Efficiency**: Optimized with 1000 token limits and reduced verbosity for faster LLM responses
-- **Schema Caching**: Intelligent caching system to avoid repeated database schema analysis
-- **Streamlined Workflow**: Three-agent architecture (Schema Analyst, SQL Generator, SQL Evaluator) for optimal speed
+- **Performance Optimization**: Fast mode to skip schema analysis for repeat queries
+- **Schema Caching**: Reuse analyzed schemas across queries
+- **Three-agent architecture**: Schema Analyst, SQL Generator, SQL Evaluator
 
-## How to deploy locally
+## LLM provider: Groq
 
-1. **Clone and Install**:
-   ```bash
-   git clone https://github.com/tushar-badhwar/nl2sql.git
-   cd nl2sql
-   pip install -r requirements.txt
-   ```
+This version uses the Groq API instead of the OpenAI API. The agents use `ChatGroq` through the `langchain-groq` package, so the existing CrewAI architecture can continue to use the same agent/task workflow.
 
-2. **Set OpenAI API Key**:
-   ```bash
-   export OPENAI_API_KEY="your_api_key_here"
-   ```
+Groq documents `llama-3.3-70b-versatile` as a supported model and provides a free usage tier subject to its current rate and usage limits. See the official Groq documentation for current limits and available models.
 
-3. **Run Application**:
-   - Make sure you have streamlit installed:
-   ```bash
-   streamlit --version
-   ```
-   - If the above returns an error, run this:
-   ```bash
-   pip install streamlit
-   streamlit run main.py
-   ```
+## How to run locally
 
-4. **Use the App**:
-   - **Quick Start**: Click "Try Sample NBA Dataset" for instant demo with pre-loaded data
-   - **Your Data**: Upload a SQLite database or add credentials for your PostgreSQL/MySQL DB
-   - Ask questions like "How many teams are in the NBA?" or "How many customers do we have?"
-   - Toggle Fast Mode for quicker responses (skips schema re-analysis)
-   - Review generated SQL and results
-   - Provide feedback to improve accuracy using like/dislike buttons
-   - Compare with your own SQL queries for ground truth validation
+### 1. Clone and install
+
+```bash
+git clone https://github.com/Emmanuella-05/NL2SQL.git
+cd NL2SQL
+pip install -r requirements.txt
+```
+
+### 2. Configure Groq
+
+Create a `.env` file based on `.env.example`:
+
+```env
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+Do **not** commit your real API key to GitHub.
+
+### 3. Start the application
+
+```bash
+streamlit run main.py
+```
+
+### 4. Test with the NBA database
+
+Click **Try Sample NBA Dataset**, then try questions such as:
+
+- How many teams are in the NBA?
+- List all teams from California
+- Who are the players with 'James' in their name?
+- How many players are in the database?
 
 ## Architecture
 
-Multi-agent system with specialized roles:
-- **Schema Analyst**: Analyzes database structure and relationships with intelligent caching
-- **SQL Generator**: Converts natural language to SQL with token-optimized processing
-- **SQL Evaluator**: Validates and executes queries with error feedback loops
+The application uses three specialized CrewAI agents:
 
-## Performance Features
+- **Schema Analyst**: analyzes the real database schema and relationships.
+- **SQL Generator**: converts the natural-language question into SQL using the schema context.
+- **SQL Evaluator**: validates and evaluates the generated SQL and participates in the retry workflow when needed.
 
-- **Fast Mode**: Skip schema analysis for repeat queries (40-50% speed improvement)
-- **Token Optimization**: 1000 token limit per agent with 30-second timeouts
-- **Reduced Verbosity**: Minimal logging for faster processing
-- **Schema Caching**: Reuse analyzed schemas across multiple queries
-- **Streamlined Pipeline**: Removed business intelligence analysis for core SQL functionality
-
-### Docker
-```bash
-docker build -t nl2sql .
-docker run -p 8501:8501 -e OPENAI_API_KEY=your_key nl2sql
+```text
+User question
+     |
+     v
+Schema Analyst
+     |
+     v
+SQL Generator
+     |
+     v
+SQL Evaluator
+     |
+     v
+SQL query + database results
 ```
 
-## 📄 License
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `GROQ_API_KEY` | Yes | Groq API key |
+| `GROQ_MODEL` | No | Groq model; defaults to `llama-3.3-70b-versatile` |
+
+## Docker
+
+```bash
+docker build -t nl2sql .
+docker run -p 8501:8501 -e GROQ_API_KEY=your_key nl2sql
+```
+
+## Important note about the free tier
+
+Using Groq does not mean unlimited API usage. The free tier has rate/usage limits that can change. For a test/demo of this NL2SQL project, however, it avoids requiring an OpenAI API key.
+
+## License
 
 MIT License - see LICENSE file for details.
-
-## 🙏 Credits
-
-Built with CrewAI, LLMs, and Streamlit.
-
-**Made with ❤️ by Tushar Badhwar**
