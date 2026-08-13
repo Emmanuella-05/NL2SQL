@@ -14,17 +14,9 @@ from database_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# LLM configuration
-# ---------------------------------------------------------------------------
-# The Streamlit UI still checks OPENAI_API_KEY in main.py for historical
-# reasons. When only a Groq key is configured, mirror it to that variable so
-# the existing UI gate continues to work without exposing or storing a key in
-# the source code.
+# Groq configuration. Keep the model configurable so the application can be
+# tested with another Groq-supported model without changing source code.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if GROQ_API_KEY and not os.getenv("OPENAI_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = GROQ_API_KEY
-
 DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
@@ -33,12 +25,13 @@ class NL2SQLAgents:
 
     def __init__(self, db_manager: DatabaseManager, model_name: str = DEFAULT_GROQ_MODEL):
         self.db_manager = db_manager
-        
-        # main.py historically passes "gpt-4o". Keep that call compatible,
-        # but use the configured Groq model instead.
+
+        # Keep compatibility with older callers that still pass gpt-4o.
+        # The application never sends requests to OpenAI; it maps that legacy
+        # value to the configured Groq model instead.
         if model_name == "gpt-4o":
             model_name = DEFAULT_GROQ_MODEL
-        
+
         self.model_name = model_name
         self.db_tools = create_database_tools(db_manager)
 
@@ -48,9 +41,6 @@ class NL2SQLAgents:
                 "environment before starting the application."
             )
 
-        # Initialize Groq LLM through LangChain. CrewAI accepts the LangChain
-        # chat model directly, so the rest of the multi-agent architecture is
-        # unchanged.
         self.llm = ChatGroq(
             model=self.model_name,
             temperature=0.0,
@@ -61,10 +51,7 @@ class NL2SQLAgents:
         )
 
     def create_schema_analyst_agent(self) -> Agent:
-        """
-        Create Schema Analyst Agent
-        Responsible for analyzing database schema and providing context
-        """
+        """Create Schema Analyst Agent."""
         return Agent(
             role="Database Schema Analyst",
             goal="Analyze and understand database schema to provide comprehensive context for SQL generation",
@@ -105,10 +92,7 @@ Your analysis should be based on the ACTUAL connected database, not hypothetical
         )
 
     def create_sql_generator_agent(self) -> Agent:
-        """
-        Create SQL Generator Agent
-        Responsible for converting natural language to SQL queries
-        """
+        """Create SQL Generator Agent."""
         return Agent(
             role="SQL Query Generator",
             goal="Convert natural language questions into accurate, efficient SQL queries using provided schema context",
@@ -147,15 +131,14 @@ Your analysis should be based on the ACTUAL connected database, not hypothetical
 - For month: strftime('%m', date_column)
 - For day: strftime('%d', date_column)
 - For year: strftime('%Y', date_column)
-- Example: WHERE strftime('%m', game_date) = '12' AND strftime('%d', game_date) = '25'
 - Use double quotes for column names with spaces if needed
 - Use LIMIT instead of TOP for limiting results
 
 **Thought Process:**
 1. Analyze the natural language question
-2. Identify the query type (counting, filtering, aggregation, etc.)
+2. Identify the query type
 3. Determine required tables and columns from schema
-4. Identify any JOIN requirements
+4. Identify JOIN requirements
 5. Apply appropriate WHERE, GROUP BY, ORDER BY, LIMIT clauses
 6. Validate query syntax and logic
 
@@ -163,10 +146,7 @@ Always think step-by-step and explain your reasoning before generating the final
         )
 
     def create_sql_evaluator_agent(self) -> Agent:
-        """
-        Create SQL Evaluator Agent
-        Responsible for validating and executing SQL queries
-        """
+        """Create SQL Evaluator Agent."""
         return Agent(
             role="SQL Query Evaluator",
             goal="Validate SQL queries for correctness, execute them safely, and provide detailed feedback on results",
@@ -186,7 +166,7 @@ Always think step-by-step and explain your reasoning before generating the final
 5. **Error Handling**: Provide clear error messages and debugging guidance
 
 **Validation Checklist:**
-- Syntax correctness (proper SQL grammar)
+- Syntax correctness
 - Table existence and correct names
 - Column existence and correct names
 - Data type compatibility
@@ -194,12 +174,6 @@ Always think step-by-step and explain your reasoning before generating the final
 - WHERE clause validity
 - Aggregate function usage
 - ORDER BY and LIMIT appropriateness
-
-**Error Categories:**
-- **Syntax Errors**: Missing keywords, incorrect punctuation
-- **Schema Errors**: Wrong table/column names, non-existent objects
-- **Logic Errors**: Incorrect JOINs, improper aggregation
-- **Performance Issues**: Missing indexes, inefficient queries
 
 **Safety Considerations:**
 - Avoid queries that could cause excessive resource usage
@@ -218,49 +192,29 @@ Always prioritize safety and correctness over speed."""
         )
 
     def create_result_interpreter_agent(self) -> Agent:
-        """
-        Create Result Interpreter Agent
-        Responsible for explaining query results in business terms
-        """
+        """Create Result Interpreter Agent."""
         return Agent(
             role="Business Intelligence Analyst",
             goal="Interpret SQL query results and explain them in clear, business-friendly terms",
             backstory="""You are a senior business intelligence analyst with extensive experience in 
             translating technical data insights into actionable business information. You excel at 
             understanding the business context behind data queries and presenting findings in a way 
-            that stakeholders can easily understand and act upon. Your expertise bridges the gap 
-            between technical data and business value.""",
+            that stakeholders can easily understand and act upon.""",
             verbose=False,
             allow_delegation=False,
             llm=self.llm,
             system_message="""You are a business intelligence analyst specializing in identifying database resources used in queries.
 
-Your ONLY responsibility is to:
-1. **Identify Tables and Columns**: Extract the specific database tables and columns that were used in the SQL query
+Your ONLY responsibility is to identify the specific database tables and columns used by a SQL query.
 
 **Required Output Format:**
-Your response must contain ONLY this information:
+**Tables and Columns Used**: [List the specific database tables and columns queried]
 
-**Tables and Columns Used**: [List the specific database tables and columns that were queried to generate these results in a clear, concise format]
-
-**Instructions:**
-- Do NOT provide executive summaries
-- Do NOT provide detailed analysis
-- Do NOT provide business insights
-- ONLY identify and list the tables and columns used
-- Be concise and direct
-
-**Example Format:**
-**Tables and Columns Used**: The query accessed the 'teams' table, specifically using the 'team_id' column to count unique team entries."""
+Do not provide executive summaries, detailed analysis, or business insights."""
         )
 
     def get_all_agents(self) -> Dict[str, Agent]:
-        """
-        Get all agents as a dictionary
-
-        Returns:
-            Dict[str, Agent]: Dictionary of all agents
-        """
+        """Get all agents as a dictionary."""
         return {
             "schema_analyst": self.create_schema_analyst_agent(),
             "sql_generator": self.create_sql_generator_agent(),
@@ -268,15 +222,7 @@ Your response must contain ONLY this information:
         }
 
     def get_agent_by_name(self, name: str) -> Agent:
-        """
-        Get a specific agent by name
-
-        Args:
-            name: Agent name ("schema_analyst", "sql_generator", "sql_evaluator")
-
-        Returns:
-            Agent: The requested agent
-        """
+        """Get a specific agent by name."""
         agents = self.get_all_agents()
         if name not in agents:
             raise ValueError(f"Agent '{name}' not found. Available agents: {list(agents.keys())}")
