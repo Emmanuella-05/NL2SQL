@@ -2,6 +2,7 @@
 streamlit>=1.28.0
 crewai>=0.140.0
 langchain-openai>=0.1.0
+langchain-groq>=0.3.0
 sqlalchemy>=2.0.0
 pandas>=2.0.0
 
@@ -13,8 +14,10 @@ pymysql>=1.1.0              # MySQL connector
 psycopg2-binary>=2.9.0      # PostgreSQL connector
 # sqlite3 is built-in with Python
 
-# OpenAI and LangChain
-openai>=1.12.0
+# LLM Providers
+# Groq is used by the NL2SQL agents. OpenAI remains listed because some
+# CrewAI/LangChain components may still expose it as an optional dependency.
+groq>=0.4.0
 
 # CrewAI and Pydantic
 pydantic>=2.0.0
