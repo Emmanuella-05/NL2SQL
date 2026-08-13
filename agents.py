@@ -5,32 +5,61 @@ Defines specialized agents for different aspects of the NL2SQL process
 
 import logging
 from typing import List, Dict, Any
+import os
+
 from crewai import Agent
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from tools import create_database_tools, DatabaseTools
 from database_manager import DatabaseManager
-import os
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# LLM configuration
+# ---------------------------------------------------------------------------
+# The Streamlit UI still checks OPENAI_API_KEY in main.py for historical
+# reasons. When only a Groq key is configured, mirror it to that variable so
+# the existing UI gate continues to work without exposing or storing a key in
+# the source code.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if GROQ_API_KEY and not os.getenv("OPENAI_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = GROQ_API_KEY
+
+DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+
 class NL2SQLAgents:
     """Factory class for creating specialized NL2SQL agents"""
-    
-    def __init__(self, db_manager: DatabaseManager, model_name: str = "gpt-4o"):
+
+    def __init__(self, db_manager: DatabaseManager, model_name: str = DEFAULT_GROQ_MODEL):
         self.db_manager = db_manager
+        
+        # main.py historically passes "gpt-4o". Keep that call compatible,
+        # but use the configured Groq model instead.
+        if model_name == "gpt-4o":
+            model_name = DEFAULT_GROQ_MODEL
+        
         self.model_name = model_name
         self.db_tools = create_database_tools(db_manager)
-        
-        # Initialize OpenAI LLM with performance optimizations
-        self.llm = ChatOpenAI(
-            model=model_name,
+
+        if not GROQ_API_KEY:
+            raise ValueError(
+                "GROQ_API_KEY is not configured. Set your Groq API key in the "
+                "environment before starting the application."
+            )
+
+        # Initialize Groq LLM through LangChain. CrewAI accepts the LangChain
+        # chat model directly, so the rest of the multi-agent architecture is
+        # unchanged.
+        self.llm = ChatGroq(
+            model=self.model_name,
             temperature=0.0,
-            api_key=os.getenv("OPENAI_API_KEY"),
-            max_tokens=1000,  # Limit response length
-            timeout=30,       # Set timeout for faster failures
-            max_retries=1     # Reduce retries for faster execution
+            api_key=GROQ_API_KEY,
+            max_tokens=1000,
+            timeout=30,
+            max_retries=1
         )
-    
+
     def create_schema_analyst_agent(self) -> Agent:
         """
         Create Schema Analyst Agent
@@ -43,7 +72,7 @@ class NL2SQLAgents:
             normalization principles, and schema optimization. You excel at understanding complex database 
             structures and relationships between tables. Your expertise helps other agents understand 
             the database context needed for accurate SQL generation.""",
-            verbose=False,  # Reduced verbosity for better performance
+            verbose=False,
             allow_delegation=False,
             llm=self.llm,
             system_message=f"""You are a database schema expert. Your primary responsibilities include:
@@ -74,7 +103,7 @@ When analyzing schema:
 
 Your analysis should be based on the ACTUAL connected database, not hypothetical examples."""
         )
-    
+
     def create_sql_generator_agent(self) -> Agent:
         """
         Create SQL Generator Agent
@@ -87,7 +116,7 @@ Your analysis should be based on the ACTUAL connected database, not hypothetical
             across different database systems. You have a deep understanding of SQL optimization, query 
             performance, and best practices. You excel at interpreting natural language requirements and 
             translating them into precise SQL statements that leverage the database schema effectively.""",
-            verbose=False,  # Reduced verbosity for better performance
+            verbose=False,
             allow_delegation=False,
             llm=self.llm,
             system_message="""You are an expert SQL query generator. Your responsibilities include:
@@ -132,7 +161,7 @@ Your analysis should be based on the ACTUAL connected database, not hypothetical
 
 Always think step-by-step and explain your reasoning before generating the final SQL query."""
         )
-    
+
     def create_sql_evaluator_agent(self) -> Agent:
         """
         Create SQL Evaluator Agent
@@ -145,7 +174,7 @@ Always think step-by-step and explain your reasoning before generating the final
             experience in SQL validation, query optimization, and database security. You have a keen eye 
             for spotting potential issues in SQL queries and ensuring they execute safely and efficiently. 
             You excel at debugging SQL problems and providing constructive feedback.""",
-            verbose=False,  # Reduced verbosity for better performance
+            verbose=False,
             allow_delegation=False,
             llm=self.llm,
             system_message="""You are a SQL query evaluator and validator. Your responsibilities include:
@@ -187,7 +216,7 @@ When evaluating queries:
 
 Always prioritize safety and correctness over speed."""
         )
-    
+
     def create_result_interpreter_agent(self) -> Agent:
         """
         Create Result Interpreter Agent
@@ -201,7 +230,7 @@ Always prioritize safety and correctness over speed."""
             understanding the business context behind data queries and presenting findings in a way 
             that stakeholders can easily understand and act upon. Your expertise bridges the gap 
             between technical data and business value.""",
-            verbose=False,  # Reduced verbosity for better performance
+            verbose=False,
             allow_delegation=False,
             llm=self.llm,
             system_message="""You are a business intelligence analyst specializing in identifying database resources used in queries.
@@ -224,11 +253,11 @@ Your response must contain ONLY this information:
 **Example Format:**
 **Tables and Columns Used**: The query accessed the 'teams' table, specifically using the 'team_id' column to count unique team entries."""
         )
-    
+
     def get_all_agents(self) -> Dict[str, Agent]:
         """
         Get all agents as a dictionary
-        
+
         Returns:
             Dict[str, Agent]: Dictionary of all agents
         """
@@ -236,16 +265,15 @@ Your response must contain ONLY this information:
             "schema_analyst": self.create_schema_analyst_agent(),
             "sql_generator": self.create_sql_generator_agent(),
             "sql_evaluator": self.create_sql_evaluator_agent()
-            # Removed result_interpreter for better performance
         }
-    
+
     def get_agent_by_name(self, name: str) -> Agent:
         """
         Get a specific agent by name
-        
+
         Args:
             name: Agent name ("schema_analyst", "sql_generator", "sql_evaluator")
-            
+
         Returns:
             Agent: The requested agent
         """
